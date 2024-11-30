@@ -1,28 +1,27 @@
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
-use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Waker};
 
 use crate::chan::{HasPriority, Priority};
-use crate::Error;
+use crate::{Error, WasmRc, WasmWeak};
 
 #[must_use = "Futures do nothing unless polled"]
-pub struct WaitingSender<M>(Arc<spin::Mutex<Inner<M>>>);
+pub struct WaitingSender<M>(WasmRc<spin::Mutex<Inner<M>>>);
 
-pub struct Handle<M>(Weak<spin::Mutex<Inner<M>>>);
+pub struct Handle<M>(WasmWeak<spin::Mutex<Inner<M>>>);
 
 impl<M> WaitingSender<M> {
     pub fn new(msg: M) -> (Handle<M>, WaitingSender<M>) {
-        let inner = Arc::new(spin::Mutex::new(Inner::new(msg)));
+        let inner = WasmRc::new(spin::Mutex::new(Inner::new(msg)));
 
-        (Handle(Arc::downgrade(&inner)), WaitingSender(inner))
+        (Handle(WasmRc::downgrade(&inner)), WaitingSender(inner))
     }
 }
 
 impl<M> Handle<M> {
     pub fn is_active(&self) -> bool {
-        Weak::strong_count(&self.0) > 0
+        WasmWeak::strong_count(&self.0) > 0
     }
 
     /// Take the message out of the paired [`WaitingSender`].

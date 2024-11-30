@@ -35,17 +35,55 @@ mod spawn;
 
 /// Commonly used types from xtra
 pub mod prelude {
-    pub use crate::address::Address;
-    pub use crate::context::Context;
-    pub use crate::message_channel::MessageChannel;
-    #[doc(no_inline)]
-    pub use crate::{Actor, Handler, Mailbox};
+  pub use crate::address::Address;
+  pub use crate::context::Context;
+  pub use crate::message_channel::MessageChannel;
+  #[doc(no_inline)]
+  pub use crate::{Actor, Handler, Mailbox};
 }
+
+#[doc(hidden)]
+mod wasm_send {
+  #[cfg(target_family = "wasm")]
+  pub trait WasmSend {}
+  #[cfg(target_family = "wasm")]
+  impl<T> WasmSend for T {}
+  #[cfg(target_family = "wasm")]
+  pub trait WasmSync {}
+  #[cfg(target_family = "wasm")]
+  impl<T> WasmSync for T {}
+  #[cfg(target_family = "wasm")]
+  pub type WasmRc<T> = std::rc::Rc<T>;
+  #[cfg(target_family = "wasm")]
+  pub type WasmWeak<T> = std::rc::Weak<T>;
+  #[cfg(target_family = "wasm")]
+  pub type WasmBoxFuture<'a, T> = futures_core::future::LocalBoxFuture<'a, T>;
+
+  #[cfg(not(target_family = "wasm"))]
+  pub trait WasmSend: Send {}
+  #[cfg(not(target_family = "wasm"))]
+  impl<T: Send> WasmSend for T {}
+  #[cfg(not(target_family = "wasm"))]
+  pub trait WasmSync {}
+  #[cfg(not(target_family = "wasm"))]
+  impl<T> WasmSync for T {}
+  #[cfg(not(target_family = "wasm"))]
+  pub type WasmRc<T> = std::sync::Arc<T>;
+  #[cfg(not(target_family = "wasm"))]
+  pub type WasmWeak<T> = std::sync::Weak<T>;
+  #[cfg(not(target_family = "wasm"))]
+  pub type WasmBoxFuture<'a, T> = futures_core::future::BoxFuture<'a, T>;
+
+  pub trait WasmSendSync: WasmSend + WasmSync {}
+  impl<T: WasmSend + WasmSync> WasmSendSync for T {}
+}
+
+pub use wasm_send::*;
 
 /// This module contains types representing the strength of an address's reference counting, which
 /// influences whether the address will keep the actor alive for as long as it lives.
 pub mod refcount {
-    pub use crate::chan::{RefCounter, TxEither as Either, TxStrong as Strong, TxWeak as Weak};
+  pub use crate::chan::{RefCounter, TxEither as Either, TxStrong as Strong, TxWeak as Weak};
 }
 
 /// Provides a default implementation of the [`Actor`] trait for the given type with a [`Stop`](Actor::Stop) type of `()` and empty lifecycle functions.
@@ -111,15 +149,11 @@ use crate::recv_future::Message;
 /// }
 /// ```
 pub trait Handler<M>: Actor {
-    /// The return value of this handler.
-    type Return: Send + 'static;
+  /// The return value of this handler.
+  type Return: WasmSend + 'static;
 
-    /// Handle a given message, returning its result.
-    fn handle(
-        &mut self,
-        message: M,
-        ctx: &mut Context<Self>,
-    ) -> impl Future<Output = Self::Return> + Send;
+  /// Handle a given message, returning its result.
+  fn handle(&mut self, message: M, ctx: &mut Context<Self>) -> impl Future<Output = Self::Return> + WasmSend;
 }
 
 /// An actor which can handle message one at a time. Actors can only be
@@ -172,49 +206,46 @@ pub trait Handler<M>: Actor {
 /// ```
 ///
 /// For longer examples, see the `examples` directory.
-pub trait Actor: 'static + Send + Sized {
-    /// Value returned from the actor when [`Actor::stopped`] is called.
-    type Stop: Send + 'static;
+pub trait Actor: 'static + WasmSend + Sized {
+  /// Value returned from the actor when [`Actor::stopped`] is called.
+  type Stop: WasmSend + 'static;
 
-    /// Called as soon as the actor has been started.
-    #[allow(unused_variables)]
-    fn started(
-        &mut self,
-        mailbox: &Mailbox<Self>,
-    ) -> impl Future<Output = Result<(), Self::Stop>> + Send {
-        async { Ok(()) }
-    }
+  /// Called as soon as the actor has been started.
+  #[allow(unused_variables)]
+  fn started(&mut self, mailbox: &Mailbox<Self>) -> impl Future<Output = Result<(), Self::Stop>> + WasmSend {
+    async { Ok(()) }
+  }
 
-    /// Called at the end of an actor's event loop.
-    ///
-    /// An actor's event loop can stop for several reasons:
-    ///
-    /// - The actor called [`Context::stop_self`].
-    /// - An actor called [`Context::stop_all`].
-    /// - The last [`Address`] with a [`Strong`](crate::refcount::Strong) reference count was dropped.
-    fn stopped(self) -> impl Future<Output = Self::Stop> + Send;
+  /// Called at the end of an actor's event loop.
+  ///
+  /// An actor's event loop can stop for several reasons:
+  ///
+  /// - The actor called [`Context::stop_self`].
+  /// - An actor called [`Context::stop_all`].
+  /// - The last [`Address`] with a [`Strong`](crate::refcount::Strong) reference count was dropped.
+  fn stopped(self) -> impl Future<Output = Self::Stop> + WasmSend;
 }
 
 /// An error related to the actor system
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum Error {
-    /// The actor is no longer running and disconnected from the sending address.
-    Disconnected,
-    /// The message request operation was interrupted. This happens when the message result sender
-    /// is dropped. Therefore, it should never be returned from [`detached`](SendFuture::detach) [`SendFuture`]s
-    /// This could be due to the actor's event loop being shut down, or due to a custom timeout.
-    /// Unlike [`Error::Disconnected`], it does not necessarily imply that any retries or further
-    /// attempts to interact with the actor will result in an error.
-    Interrupted,
+  /// The actor is no longer running and disconnected from the sending address.
+  Disconnected,
+  /// The message request operation was interrupted. This happens when the message result sender
+  /// is dropped. Therefore, it should never be returned from [`detached`](SendFuture::detach) [`SendFuture`]s
+  /// This could be due to the actor's event loop being shut down, or due to a custom timeout.
+  /// Unlike [`Error::Disconnected`], it does not necessarily imply that any retries or further
+  /// attempts to interact with the actor will result in an error.
+  Interrupted,
 }
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Error::Disconnected => f.write_str("Actor address disconnected"),
-            Error::Interrupted => f.write_str("Message request interrupted"),
-        }
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    match self {
+      Error::Disconnected => f.write_str("Actor address disconnected"),
+      Error::Interrupted => f.write_str("Message request interrupted"),
     }
+  }
 }
 
 impl std::error::Error for Error {}
@@ -225,23 +256,23 @@ impl std::error::Error for Error {}
 /// them to the actor.
 pub async fn run<A>(mailbox: Mailbox<A>, mut actor: A) -> A::Stop
 where
-    A: Actor,
+  A: Actor,
 {
-    if let Err(stop) = actor.started(&mailbox).await {
-        return stop;
-    }
+  if let Err(stop) = actor.started(&mailbox).await {
+    return stop;
+  }
 
-    while let ControlFlow::Continue(()) = yield_once(&mailbox, &mut actor).await {}
+  while let ControlFlow::Continue(()) = yield_once(&mailbox, &mut actor).await {}
 
-    actor.stopped().await
+  actor.stopped().await
 }
 
 /// Yields to the manager to handle one message, returning the actor should be shut down or not.
 pub async fn yield_once<A>(mailbox: &Mailbox<A>, actor: &mut A) -> ControlFlow<(), ()>
 where
-    A: Actor,
+  A: Actor,
 {
-    mailbox.next().await.dispatch_to(actor).await
+  mailbox.next().await.dispatch_to(actor).await
 }
 
 /// Handle any incoming messages for the actor while running a given future. This is similar to
@@ -300,31 +331,31 @@ where
 /// ```
 pub async fn select<A, F, R>(mailbox: &Mailbox<A>, actor: &mut A, mut fut: F) -> Either<R, F>
 where
-    F: Future<Output = R> + Unpin,
-    A: Actor,
+  F: Future<Output = R> + Unpin,
+  A: Actor,
 {
-    let mut control_flow = ControlFlow::Continue(());
+  let mut control_flow = ControlFlow::Continue(());
 
-    while control_flow.is_continue() {
-        let (msg, unfinished) = {
-            let mut next_msg = mailbox.next();
-            match future::select(fut, &mut next_msg).await {
-                Either::Left((future_res, _)) => {
-                    if let Some(msg) = next_msg.now_or_never() {
-                        msg.dispatch_to(actor).await;
-                    }
+  while control_flow.is_continue() {
+    let (msg, unfinished) = {
+      let mut next_msg = mailbox.next();
+      match future::select(fut, &mut next_msg).await {
+        Either::Left((future_res, _)) => {
+          if let Some(msg) = next_msg.now_or_never() {
+            msg.dispatch_to(actor).await;
+          }
 
-                    return Either::Left(future_res);
-                }
-                Either::Right(tuple) => tuple,
-            }
-        };
+          return Either::Left(future_res);
+        }
+        Either::Right(tuple) => tuple,
+      }
+    };
 
-        control_flow = msg.dispatch_to(actor).await;
-        fut = unfinished;
-    }
+    control_flow = msg.dispatch_to(actor).await;
+    fut = unfinished;
+  }
 
-    Either::Right(fut)
+  Either::Right(fut)
 }
 
 /// Joins on a future by handling all incoming messages whilst polling it. The future will
@@ -376,12 +407,12 @@ where
 /// ```
 pub async fn join<A, F, R>(mailbox: &Mailbox<A>, actor: &mut A, fut: F) -> R
 where
-    F: Future<Output = R>,
-    A: Actor,
+  F: Future<Output = R>,
+  A: Actor,
 {
-    futures_util::pin_mut!(fut);
-    match select(mailbox, actor, fut).await {
-        Either::Left(res) => res,
-        Either::Right(fut) => fut.await,
-    }
+  futures_util::pin_mut!(fut);
+  match select(mailbox, actor, fut).await {
+    Either::Left(res) => res,
+    Either::Right(fut) => fut.await,
+  }
 }

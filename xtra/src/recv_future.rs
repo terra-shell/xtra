@@ -1,13 +1,13 @@
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 use futures_core::FusedFuture;
 use futures_util::FutureExt;
 
 use crate::chan::{self, ActorMessage, BroadcastQueue, Rx, WaitingReceiver};
+use crate::WasmRc;
 
 /// A future which will resolve to the next message to be handled by the actor.
 ///
@@ -31,13 +31,13 @@ pub struct Message<A> {
     pub(crate) inner: ActorMessage<A>,
 
     pub(crate) channel: chan::Ptr<A, Rx>,
-    pub(crate) broadcast_mailbox: Arc<BroadcastQueue<A>>,
+    pub(crate) broadcast_mailbox: WasmRc<BroadcastQueue<A>>,
 }
 
 impl<A> ReceiveFuture<A> {
     pub(crate) fn new(
         channel: chan::Ptr<A, Rx>,
-        broadcast_mailbox: Arc<BroadcastQueue<A>>,
+        broadcast_mailbox: WasmRc<BroadcastQueue<A>>,
     ) -> Self {
         Self(Receiving::New {
             channel,
@@ -62,7 +62,7 @@ impl<A> Future for ReceiveFuture<A> {
 enum Receiving<A> {
     New {
         channel: chan::Ptr<A, Rx>,
-        broadcast_mailbox: Arc<BroadcastQueue<A>>,
+        broadcast_mailbox: WasmRc<BroadcastQueue<A>>,
     },
     Waiting(Waiting<A>),
     Done,
@@ -78,14 +78,14 @@ enum Receiving<A> {
 #[must_use = "Futures do nothing unless polled"]
 pub struct Waiting<A> {
     channel: Option<chan::Ptr<A, Rx>>,
-    broadcast_mailbox: Option<Arc<BroadcastQueue<A>>>,
+    broadcast_mailbox: Option<WasmRc<BroadcastQueue<A>>>,
     waiting_receiver: WaitingReceiver<A>,
 }
 
 impl<A> Future for Waiting<A> {
     type Output = Result<
-        (ActorMessage<A>, chan::Ptr<A, Rx>, Arc<BroadcastQueue<A>>),
-        (chan::Ptr<A, Rx>, Arc<BroadcastQueue<A>>),
+        (ActorMessage<A>, chan::Ptr<A, Rx>, WasmRc<BroadcastQueue<A>>),
+        (chan::Ptr<A, Rx>, WasmRc<BroadcastQueue<A>>),
     >;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

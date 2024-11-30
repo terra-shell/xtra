@@ -9,7 +9,7 @@ mod waiting_sender;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, VecDeque};
 use std::sync::atomic::AtomicUsize;
-use std::sync::{atomic, Arc, Mutex, Weak};
+use std::sync::{atomic, Mutex};
 use std::{cmp, mem};
 
 use event_listener::{Event, EventListener};
@@ -19,17 +19,17 @@ pub use waiting_receiver::WaitingReceiver;
 pub use waiting_sender::WaitingSender;
 
 use crate::envelope::{BroadcastEnvelope, MessageEnvelope, Shutdown};
-use crate::{Actor, Error};
+use crate::{Actor, Error, WasmRc, WasmWeak};
 
 pub type MessageToOne<A> = Box<dyn MessageEnvelope<Actor = A>>;
-pub type MessageToAll<A> = Arc<dyn BroadcastEnvelope<Actor = A>>;
+pub type MessageToAll<A> = WasmRc<dyn BroadcastEnvelope<Actor = A>>;
 pub type BroadcastQueue<A> = spin::Mutex<BinaryHeap<ByPriority<MessageToAll<A>>>>;
 
 /// Create an actor mailbox, returning a sender and receiver for it.
 ///
 /// The given capacity is applied separately for unicast and broadcast messages.
 pub fn new<A>(capacity: Option<usize>) -> (Ptr<A, TxStrong>, Ptr<A, Rx>) {
-    let inner = Arc::new(Chan::new(capacity));
+    let inner = WasmRc::new(Chan::new(capacity));
 
     let tx = Ptr::<A, TxStrong>::new(inner.clone());
     let rx = Ptr::<A, Rx>::new(inner);
@@ -91,13 +91,13 @@ impl<A> Chan<A> {
     }
 
     /// Creates a new broadcast mailbox on this channel.
-    pub fn new_broadcast_mailbox(&self) -> Arc<BroadcastQueue<A>> {
-        let mailbox = Arc::new(spin::Mutex::new(BinaryHeap::new()));
+    pub fn new_broadcast_mailbox(&self) -> WasmRc<BroadcastQueue<A>> {
+        let mailbox = WasmRc::new(spin::Mutex::new(BinaryHeap::new()));
         self.chan
             .lock()
             .unwrap()
             .broadcast_queues
-            .push(Arc::downgrade(&mailbox));
+            .push(WasmRc::downgrade(&mailbox));
 
         mailbox
     }
@@ -140,7 +140,7 @@ impl<A> Chan<A> {
             return Err(Error::Disconnected);
         }
 
-        Arc::get_mut(&mut message)
+        WasmRc::get_mut(&mut message)
             .expect("calling after try_send not supported")
             .start_span();
 
@@ -237,7 +237,7 @@ impl<A> Chan<A> {
         self.chan
             .lock()
             .unwrap()
-            .send_broadcast(Arc::new(Shutdown::new()));
+            .send_broadcast(WasmRc::new(Shutdown::new()));
     }
 
     /// Shutdown all [`WaitingSender`]s in this channel.
@@ -297,7 +297,7 @@ impl<A> Chan<A> {
     pub fn next_broadcast_message(
         &self,
         broadcast_mailbox: &BroadcastQueue<A>,
-    ) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+    ) -> Option<WasmRc<dyn BroadcastEnvelope<Actor = A>>> {
         self.chan.lock().unwrap().pop_broadcast(broadcast_mailbox)
     }
 }
@@ -308,7 +308,7 @@ struct Inner<A> {
     waiting_send_to_all: VecDeque<waiting_sender::Handle<MessageToAll<A>>>,
     waiting_receivers_handles: VecDeque<waiting_receiver::Handle<A>>,
     unicast_queue: BinaryHeap<ByPriority<MessageToOne<A>>>,
-    broadcast_queues: Vec<Weak<BroadcastQueue<A>>>,
+    broadcast_queues: Vec<WasmWeak<BroadcastQueue<A>>>,
     broadcast_tail: usize,
 }
 
@@ -340,7 +340,7 @@ impl<A> Inner<A> {
     pub fn pop_broadcast(
         &mut self,
         broadcast_mailbox: &BroadcastQueue<A>,
-    ) -> Option<Arc<dyn BroadcastEnvelope<Actor = A>>> {
+    ) -> Option<WasmRc<dyn BroadcastEnvelope<Actor = A>>> {
         let message = broadcast_mailbox.lock().pop()?.0;
 
         self.broadcast_tail = self.longest_broadcast_queue();

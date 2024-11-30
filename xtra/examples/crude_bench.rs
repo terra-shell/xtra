@@ -99,8 +99,8 @@ async fn do_channel_benchmark<M, RM>(
     name: &str,
     f: impl Fn(&MessageChannel<M, ()>) -> SendFuture<ActorErasedSending, RM>,
 ) where
-    Counter: Handler<M, Return = ()> + Send,
-    M: Send + 'static,
+    Counter: Handler<M, Return = ()> + ::xtra::WasmSend,
+    M: ::xtra::WasmSend + 'static,
     SendFuture<ActorErasedSending, RM>: Future,
 {
     let addr = xtra::spawn_tokio(Counter { count: 0 }, Mailbox::unbounded());

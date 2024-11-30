@@ -5,14 +5,13 @@ use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 
 use crate::chan::ActorMessage;
 use crate::envelope::Shutdown;
 use crate::instrumentation::Span;
 use crate::mailbox::Mailbox;
-use crate::Message;
+use crate::{Message, WasmBoxFuture};
 
 impl<A> Message<A> {
     /// Dispatches this message to the given actor.
@@ -109,7 +108,7 @@ enum State<'a, A> {
         mailbox: Mailbox<A>,
     },
     Running {
-        fut: BoxFuture<'a, ControlFlow<()>>,
+        fut: WasmBoxFuture<'a, ControlFlow<()>>,
         phantom: PhantomData<fn(&'a A)>,
     },
     Done,

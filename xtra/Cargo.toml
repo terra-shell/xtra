@@ -13,7 +13,7 @@ categories = ["asynchronous", "concurrency"]
 rust-version = "1.75.0"
 
 [dependencies]
-catty = "0.1.5"
+catty = { version = "0.1.5", git = "https://github.com/terra-shell/catty.git" }
 futures-core = "0.3.21" # alloc is the only default feature and we need it.
 futures-sink = { version = "0.3.21", default-features = false, optional = true }
 futures-util = { version = "0.3.21", default-features = false }

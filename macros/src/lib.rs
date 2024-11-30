@@ -28,7 +28,7 @@ pub fn actor_derive(input: TokenStream) -> TokenStream {
     .into()
 }
 
-/// Generics a `: Send + 'static` predicate for each type parameter present in the generics.
+/// Generics a `: WasmSend + 'static` predicate for each type parameter present in the generics.
 fn send_and_static_bounds(input: &DeriveInput) -> Vec<WherePredicate> {
     input
         .generics
@@ -41,7 +41,7 @@ fn send_and_static_bounds(input: &DeriveInput) -> Vec<WherePredicate> {
         })
         .map(|ident| {
             parse_quote! {
-                #ident: Send + 'static
+                #ident: ::xtra::WasmSend + 'static
             }
         })
         .collect::<Vec<WherePredicate>>()

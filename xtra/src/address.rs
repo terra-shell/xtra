@@ -13,7 +13,7 @@ use futures_util::FutureExt;
 
 use crate::refcount::{Either, RefCounter, Strong, Weak};
 use crate::send_future::{ActorNamedBroadcasting, Broadcast, ResolveToHandlerReturn};
-use crate::{chan, ActorNamedSending, Handler, SendFuture};
+use crate::{chan, ActorNamedSending, Handler, SendFuture, WasmSend};
 
 /// An [`Address`] is a reference to an actor through which messages can be sent.
 ///
@@ -185,7 +185,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
         message: M,
     ) -> SendFuture<ActorNamedSending<A, Rc>, ResolveToHandlerReturn<<A as Handler<M>>::Return>>
     where
-        M: Send + 'static,
+        M: WasmSend + 'static,
         A: Handler<M>,
     {
         SendFuture::sending_named(message, self.0.clone())
@@ -198,7 +198,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     /// set to `()`.
     pub fn broadcast<M>(&self, msg: M) -> SendFuture<ActorNamedBroadcasting<A, Rc>, Broadcast>
     where
-        M: Clone + Send + Sync + 'static,
+        M: Clone + WasmSend + Sync + 'static,
         A: Handler<M, Return = ()>,
     {
         SendFuture::broadcast_named(msg, self.0.clone())
@@ -239,7 +239,7 @@ impl<A, Rc: RefCounter> Address<A, Rc> {
     pub fn into_sink<M>(self) -> impl futures_sink::Sink<M, Error = crate::Error>
     where
         A: Handler<M, Return = ()>,
-        M: Send + 'static,
+        M: ::xtra::WasmSend + 'static,
     {
         futures_util::sink::unfold((), move |(), message| self.send(message))
     }
@@ -310,6 +310,6 @@ impl<A, Rc: RefCounter> Hash for Address<A, Rc> {
     fn hash<H: Hasher>(&self, state: &mut H) {
         state.write_usize(self.0.inner_ptr() as *const _ as usize);
         state.write_u8(self.0.is_strong() as u8);
-        state.finish();
+        let _ = state.finish();
     }
 }

@@ -1,8 +1,6 @@
-use std::sync::Arc;
-
 use crate::chan::{self, BroadcastQueue, Rx};
 use crate::recv_future::ReceiveFuture;
-use crate::{Address, WeakAddress};
+use crate::{Address, WasmRc, WeakAddress};
 
 /// A [`Mailbox`] is the counter-part to an [`Address`].
 ///
@@ -10,7 +8,7 @@ use crate::{Address, WeakAddress};
 /// Think of [`Address`] and [`Mailbox`] as an MPMC channel.
 pub struct Mailbox<A> {
     inner: chan::Ptr<A, Rx>,
-    broadcast_mailbox: Arc<BroadcastQueue<A>>,
+    broadcast_mailbox: WasmRc<BroadcastQueue<A>>,
 }
 
 impl<A> Mailbox<A> {
@@ -57,7 +55,7 @@ impl<A> Mailbox<A> {
 
     pub(crate) fn from_parts(
         chan: chan::Ptr<A, Rx>,
-        broadcast_mailbox: Arc<BroadcastQueue<A>>,
+        broadcast_mailbox: WasmRc<BroadcastQueue<A>>,
     ) -> Self {
         Self {
             inner: chan,
