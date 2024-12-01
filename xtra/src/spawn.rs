@@ -1,5 +1,5 @@
 /// Spawns the given actor into the tokio runtime, returning an [`Address`](crate::Address) to it.
-#[cfg(feature = "tokio")]
+#[cfg(all(feature = "tokio", not(target_family = "wasm")))]
 #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
 pub fn spawn_tokio<A>(
     actor: A,
@@ -14,7 +14,7 @@ where
 }
 
 /// Spawns the given actor into the async_std runtime, returning an [`Address`](crate::Address) to it.
-#[cfg(feature = "async_std")]
+#[cfg(all(feature = "async_std", not(target_family = "wasm")))]
 #[cfg_attr(docsrs, doc(cfg(feature = "async_std")))]
 pub fn spawn_async_std<A>(
     actor: A,
@@ -29,7 +29,7 @@ where
 }
 
 /// Spawns the given actor into the smol runtime, returning an [`Address`](crate::Address) to it.
-#[cfg(feature = "smol")]
+#[cfg(all(feature = "smol", not(target_family = "wasm")))]
 #[cfg_attr(docsrs, doc(cfg(feature = "smol")))]
 pub fn spawn_smol<A>(
     actor: A,
@@ -44,7 +44,7 @@ where
 }
 
 /// Spawns the given actor onto the thread-local runtime via `wasm_bindgen_futures`, returning an [`Address`](crate::Address) to it.
-#[cfg(feature = "wasm_bindgen")]
+#[cfg(all(feature = "wasm_bindgen", target_family = "wasm"))]
 #[cfg_attr(docsrs, doc(cfg(feature = "wasm_bindgen")))]
 pub fn spawn_wasm_bindgen<A>(
     actor: A,
